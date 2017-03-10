@@ -1,0 +1,316 @@
+---
+title: "Capstone Milestone Report"
+author: "Cathy D"
+date: "10 February 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+
+setwd("//filestore.cartrawler.com/profilesFR$/cdunne/Desktop/Graduate Programme/Grad Programme Year 2/Data Science/CathyCoursera")
+
+```
+
+```{r package load, warning = FALSE, message = FALSE}
+
+library(tm)
+library(stringi)
+library(stringr)
+library(knitr)
+library(SnowballC)
+library(RWeka)
+library(wordcloud)
+library(ggplot2)
+library(grDevices)
+
+```
+
+## Introduction
+
+This is the Milestone Report for the Capstone Project of the Johns Hopkins Data Science Specialization. The purpose of this report is to display that I have processed the data correctly in preparation for building my shiny app and prediction algorithm. The tasks described in the assignment instruction are as below:
+
+1. Demonstrate that you've downloaded the data and have successfully loaded it in.
+2. Create a basic report of summary statistics about the data sets.
+3. Report any interesting findings that you amassed so far.
+4. Get feedback on your plans for creating a prediction algorithm and Shiny app.
+
+## Load Data
+
+The data used for this analysis was provided by SwiftKey who build a smart keyboard that makes it easier for a user to type on their devices. The link to the data is below:
+
+https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip
+
+The data contains text files in three languages: English; German; Russian and Finnish. For the purpose of this analysis, we will be using the english language only.
+
+In the English folder, there are three text files
+
+* blogs - blogs from various sources
+* news - from news and media sites
+* twitter - tweets from twitter
+
+We will now load the three data files using ReadLines().
+
+
+```{r load data, warning=FALSE, message=FALSE}
+
+
+#=========================== Load Data ===========================#
+
+blogs <- readLines("final/en_US/en_US.blogs.txt", encoding = 'UTF-8', skipNul = TRUE)
+news <- readLines("final/en_US/en_US.news.txt", encoding = 'UTF-8', skipNul = TRUE)
+twitter <- readLines("final/en_US/en_US.twitter.txt", encoding = 'UTF-8', skipNul = TRUE)
+
+
+```
+
+## Summary of Data Files
+
+It is important to understand what our data looks like. Therefore, we will perform simple statistics to analyse the size of each file, total lines and total words. This will give us an understanding if we need to reduce the size of our data for the analysis.
+
+```{r intro data, warning=FALSE, message=FALSE}
+
+#=========================== File size ===========================#
+
+## get file size for each dataset
+sblogs <- file.info("final/en_US/en_US.blogs.txt")$size / 1024^2
+snews <- file.info("final/en_US/en_US.news.txt")$size / 1024^2
+stwitter <- file.info("final/en_US/en_US.twitter.txt")$size / 1024^2
+
+## create new variable "size" using rbind
+size <- rbind(sblogs, snews, stwitter)
+
+## change column and row names 
+colnames(size)[1]  <- "File Size"
+rownames(size) <- c("blogs", "news", "twitter")
+
+#=========================== Total Lines ===========================#
+
+## get total number of lines for each dataset
+lblogs <- length(blogs)
+lnews <- length(news)
+ltwitter <- length(twitter)
+
+## create new variable "lines" using rbind
+lines <- rbind(lblogs, lnews, ltwitter)
+
+## change column and row names 
+colnames(lines)[1]  <- "Number of Lines"
+rownames(lines) <- c("blogs", "news", "twitter")
+
+
+#=========================== Word Count ===========================#
+
+# get total count of words for each dataset
+wblogs <- sum(stri_count_words(blogs))
+wnews <- sum(stri_count_words(news))
+wtwitter <- sum(stri_count_words(twitter))
+
+## create new variable "words" using rbind
+words <- rbind(wblogs, wnews, wtwitter)
+
+## change column and row names 
+colnames(words)[1]  <- "Number of Words"
+rownames(words) <- c("blogs", "news", "twitter")
+
+#=========================== Intro Data ===========================#
+
+# create data called "Intro_Data" usinf cbind to create one dataset
+Intro_Data <- cbind(size, lines, words)
+
+kable(data.frame(Intro_Data))
+
+
+```
+
+We are working with very large data as can be seen from these simplr statistics.
+
+## Tidy Data and Create a Corpus
+
+Because it is clear to see that the data is very large. In order to do the analysis, we will need to take a sample of the data.
+
+```{r sample data, warning=FALSE, message=FALSE}
+
+#=========================== Sample Data ===========================#
+
+# This step is to ensure that we get the same data every time we run the code. We call this a "seed"
+set.seed(7403)
+
+# get a sample of the data using sample()
+sub_blog <- sample(blogs, 3000, replace = FALSE)
+sub_news <- sample(news, 3000, replace = FALSE)
+sub_twitter <- sample(twitter, 3000, replace = FALSE)
+
+# merge the three data samples into one data file for analysis
+data <- paste0(sub_blog, sub_news, sub_twitter)
+
+# Due to issues with converting the text to lower case, I had to do this preprocessing step
+data<- sapply(data,function(row) iconv(row, "latin1", "ASCII", sub=""))
+
+# show table of stats
+kable(stri_stats_general(data))
+
+```
+
+  
+Now that the data has been sampled. The data needs to be tidied before any analysis is performed. 
+
+A corpus is a large structured set of texts that is used to do statistical analysis. We will need to create a corpus and tidy the data. Removing upper case letters and punctuation are examples of how we will tidy the data.
+
+
+
+```{r tidy data, warning = FALSE, message = FALSE}
+
+#=========================== Tidy Data ===========================#
+
+# convert files into a Corpus and call it "MyCorpus"
+MyCorpus <- VCorpus(VectorSource(data))
+# create Plan text Document
+MyCorpus <- tm_map(MyCorpus, PlainTextDocument) 
+# remove numbers
+MyCorpus <- tm_map (MyCorpus, removeNumbers)
+# transforms all text to lower case
+MyCorpus <- tm_map(MyCorpus, content_transformer(tolower)) # converts all text to lower case
+# remove punctuation
+MyCorpus <- tm_map(MyCorpus, removePunctuation) #removes punctuation
+# removes common words like "a" and "the"
+MyCorpus <- tm_map(MyCorpus, removeWords, stopwords("english")) 
+
+# make a wordcloud to look at top 100 words
+wordcloud(MyCorpus, max.words = 100, random.order = TRUE, rot.per=0.5, use.r.layout=FALSE,colors=brewer.pal(8, "Accent"))
+title("Top 100 Words")
+
+```
+
+The above word cloud shows the top 100 words in the corpus. The bigger the word, the more frequent it is in the corpus Words like "the" and "a" cannot be seen as we have removed them from the corpus.  
+
+## NGrams
+
+An important aspect to analyse in this analysis is N-Grams. A N-Gram is a sequence of a number of items (known as N) from a sequence of text. If you have a uni-gram ( N=1 ) you can have a sequence of one word like "the" or "I", etc. Bi-grams ( N=2 ) is a sequence of two words like "I have" or "I feel". A tri-gram would be three words and so on.
+
+In the next step we will create a Uni-gram ( N=1 ), Bi-gram ( N=2 ) and a Tri-gram ( N=3 ). We will do this by making what we a call a "tokenizer" to specify what we want our "N" to be. The tokeniser will break down the text into the specified number of words. 
+
+We will then create a Document term Matrix (a table that describes frequency of different word(s) that occur in a text. This will be used to build a data set that we can use to analyse the frequency of words. 
+
+```{r tolkenisation, warning=FALSE, message=FALSE}
+
+#=========================== Tokenisation ===========================#
+
+# Unigram Tokenizer
+Gram1 <- function(x) NGramTokenizer(x, Weka_control(min = 1, max = 1))
+# Bigram Tokenizer
+Gram2 <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+# Trigram Tokenizer
+Gram3 <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+
+# Document Term Matrix - Unigram 
+unigram <- DocumentTermMatrix(MyCorpus, control = list(tokenize = Gram1))
+# Document Term Matrix - Bigram
+bigram <- DocumentTermMatrix(MyCorpus, control = list(tokenize = Gram2))
+# Document Term Matrix - Trigram
+trigram <- DocumentTermMatrix(MyCorpus, control = list(tokenize = Gram3))
+
+
+```
+
+## Exploritory Data Analysis 
+
+Now that we have created the tokenizers for N-Gram, we can use exploratory data analysis to diplay our results. 
+
+### Uni-gram 
+
+We will now build our dataset for our top words in our Uni-gram (one word string). We will then plot the frequency of these words in a barchat. 
+
+```{r unigram , warning=FALSE, message=FALSE}
+
+#=========================== Unigram ===========================#
+
+# use apply() to add up the frequency of words
+unigram <- apply(unigram, 2, sum)
+# put Document Term Matrix into a data frame with two vairables, "Word" and "Frequency"
+Uni_Data <- data.frame(Word=names(unigram), Frequency=unigram)
+# order the data in decreasing order and select the top 25 words
+Top_Uni_Data <- Uni_Data[order(-Uni_Data$Frequency),][1:25,]
+# use kable() to show top 5 words
+kable(head(Top_Uni_Data))
+
+
+# plot top words using ggplot()
+g0 <- ggplot(data = Top_Uni_Data, aes( x = reorder(Word, Frequency), y = Frequency))
+g0 <- g0 + geom_bar(stat = "identity", fill = "darkmagenta")
+g0 <- g0 + coord_flip()
+g0 <- g0 + ggtitle("Uni-gram Word Frequency") + labs( x = "Word", y = "Frequency")
+g0 <- g0 + theme(panel.background = element_rect(fill = "white"))
+g0
+
+```
+
+Words like "said" and "will" are very freuqent in this data. This is not very surprising due to the nature of the data that we are using. Blogs, news sites and tweets would contain a good selection of these words. 
+
+### Bi-gram
+
+We will now build our dataset for our top words in our Bi-gram (string of two words). We will then plot the frequency of these words in a barchat. 
+
+```{r bigram, , warning=FALSE, message=FALSE}
+
+#=========================== Bigram ===========================#
+
+# use apply() to add up the frequency of words
+bigram <- apply(bigram, 2, sum)
+# put Document Term Matrix into a data frame with two vairables, "Word" and "Frequency"
+Bi_Data <- data.frame(Words=names(bigram), Frequency=bigram)
+# order the data in decreasing order and select the top 25 words
+Top_Bi_Data <- Bi_Data[order(-Bi_Data$Frequency),][1:25,]
+# use kable() to show top 5 words
+kable(head(Top_Bi_Data))
+
+# plot top words using ggplot()
+g1 <- ggplot(data = Top_Bi_Data, aes( x = reorder(Words, Frequency), y = Frequency))
+g1 <- g1 + geom_bar(stat = "identity", fill = "darkorange")
+g1 <- g1 + coord_flip()
+g1 <- g1 + ggtitle("Bi-gram Word Frequency") + labs( x = "Words", y = "Frequency")
+g1 <- g1 + theme(panel.background = element_rect(fill = "white"))
+g1
+
+
+```
+
+Words like "don't know" and "last year" are very freuqent in this data. This is not very surprising due to the nature of the data that we are using. As this is data from US words like "new york" and "high school" are also frequent. 
+
+### Tri-gram
+
+We will now build our dataset for our top words in our Tri-gram (three word string). We will then plot the frequency of these words in a barchat. 
+
+```{r trigram, , warning=FALSE, message=FALSE}
+
+#=========================== Trigram ===========================#
+
+# use apply() to add up the frequency of words
+trigram <- apply(trigram, 2, sum)
+# put Document Term Matrix into a data frame with two vairables, "Word" and "Frequency"
+Tri_Data <- data.frame(Words=names(trigram), Frequency=trigram)
+# order the data in decreasing order and select the top 25 words
+Top_Tri_Data <- Tri_Data[order(-Tri_Data$Frequency),][1:25,]
+# use kable() to show top 5 words
+kable(head(Top_Tri_Data))
+
+
+# plot top words using ggplot()
+g2 <- ggplot(data = Top_Tri_Data, aes( x = reorder(Words, Frequency), y = Frequency))
+g2 <- g2 + geom_bar(stat = "identity", fill = "darkslategray3")
+g2 <- g2 + coord_flip()
+g2 <- g2 + ggtitle("Tri-gram Word Frequency") + labs( x = "Words", y = "Frequency")
+g2 <- g2 + theme(panel.background = element_rect(fill = "white"))
+g2
+
+
+```
+
+The tri-gram is a little more interesting. we we increse the number of words, the less frequent they become. Therefore, there might be a few more random strings of words. The words "new york city" and "new york times" are very frequent thank "feel like im" in the data. This is very interesting especially becuase two of the three data sources are from blogs and tweets which would use more personal forms of writing like "feel" and "think". This is probably due to removing the common words in the cleaning of the corpus. 
+
+
+## Next Steps
+
+* I will create a prediction algorithm - I am unsure if I should include common words like "a" and "the" in the Corpus. I will try out a few methods and decide.I will determine my test and train datasets and build my prediction model. 
+* I will build a shiny application - I will build a simple user friendly interface where a user can type a word and my prediction model will predict the next word.
+* I will also create a slide deck with instructions on how to use the shiny app.
